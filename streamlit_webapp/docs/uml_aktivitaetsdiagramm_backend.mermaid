@@ -1,0 +1,138 @@
+flowchart TB
+
+    START(( ))
+
+    DB[("SQLite<br/>analytic_database_v4.db")]
+
+    subgraph PHASE1["PHASE 1: Anwendungsstart, laeuft genau einmal"]
+    direction TB
+    A1["main.py wird importiert"]
+    A2["SINGLETON erzeugen:<br/>Engine (Connection-Pool) fuer den<br/>gesamten Prozess, einmalig.<br/>Dazu Session Factory, PRAGMA foreign_keys ON"]
+    A3["BuildApiWorkflow().run() aufrufen"]
+    A4["FastAPI-Instanz erstellen"]
+    A5["CORS-Middleware hinzufuegen"]
+    A6["Vier Router registrieren:<br/>reference, kpis, tickets, measures"]
+    A7["Statusroute GET / definieren"]
+    A8["Fertige App an Variable application binden"]
+    end
+
+    WARTEN[/"Server laeuft und wartet auf HTTP-Anfragen<br/>(je Anfrage wird Phase 2 erneut durchlaufen)"/]
+
+    subgraph PHASE2["PHASE 2: Anfrageverarbeitung, laeuft bei jeder Anfrage neu"]
+    direction TB
+    Q1{"Welcher Router<br/>ist zustaendig?"}
+
+    %% Zweig A: ORM-Pfad
+    L1["SCOPED SINGLETON beginnt:<br/>neue Session ueber Depends(get_db),<br/>gueltig nur fuer diese eine Anfrage"]
+    L2["Workflow aufrufen: run(session, ...)"]
+    Q2{"Lesend<br/>oder schreibend?"}
+
+    L3["Fetch-Flow ausfuehren:<br/>select() bauen, session.execute()"]
+    L4["CheckMachineExists ausfuehren"]
+    Q3{"Maschine<br/>vorhanden?"}
+    L5["MachineNotFound werfen"]
+    L6["InsertMeasure ausfuehren:<br/>einfuegen und committen"]
+    L7["FetchMeasures erneut ausfuehren:<br/>vollstaendige Zeile inklusive Maschinenname"]
+
+    %% Zweig B: pandas-Pfad
+    P1["db.engine direkt verwenden, keine Session"]
+    P2["Workflow aufrufen: run(engine, ...)"]
+    P3["Lade-Flow ausfuehren:<br/>LoadKpiEvents, LoadTickets oder LoadTicketTexts"]
+    P4["load_dataframe():<br/>Statement ausfuehren, DataFrame liefern"]
+    P5["Rechen-Flows ausfuehren:<br/>Compute, Enrich, Filter, Summarize, Cluster.<br/>Arbeiten nur auf dem DataFrame, ohne Datenbankzugriff"]
+    P6["to_json_records():<br/>NaN in None umwandeln"]
+
+
+    %% ---------- Zusammenfuehrung ----------
+    M1["Ergebnis in Pydantic-Modelle<br/>aus schema_models.py umwandeln"]
+    Q4{"MachineNotFound<br/>aufgetreten?"}
+    M2["In HTTPException 404 uebersetzen"]
+    M3["Ergebnis an FastAPI zurueckgeben"]
+    M4["FastAPI prueft gegen response_model<br/>und serialisiert nach JSON"]
+    M5["SCOPED SINGLETON endet:<br/>get_db() schliesst die Session<br/>im finally-Block (nur im ORM-Pfad)"]
+    end
+
+    ENDE((( )))
+
+    %% ---------- Kanten ----------
+    START -->|"uvicorn main:application"| A1
+    A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7 --> A8 --> WARTEN
+    WARTEN --> Q1
+
+    Q1 -->|"reference.py<br/>measures.py"| L1
+    Q1 -->|"kpis.py<br/>tickets.py"| P1
+
+    L1 --> L2 --> Q2
+    Q2 -->|"lesend, GET"| L3
+    Q2 -->|"schreibend, POST /measures"| L4
+    L4 --> Q3
+    Q3 -->|"nein"| L5
+    Q3 -->|"ja"| L6 --> L7
+    L3 --> M1
+    L7 --> M1
+    L5 --> Q4
+
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> M1
+
+    L3 -.-> DB
+    L4 -.-> DB
+    L6 -.-> DB
+    L7 -.-> DB
+    P4 -.-> DB
+
+    M1 --> Q4
+    Q4 -->|"ja"| M2 --> M4
+    Q4 -->|"nein"| M3 --> M4
+    M4 --> M5
+    M5 -->|"HTTP-Antwort an das Frontend"| ENDE
+
+    %% ---------- Legende ----------
+    subgraph LEGENDE["Legende: Zuordnung zur Codeschicht"]
+        direction LR
+        LG1["routers/"]
+        LG2["workflows/"]
+        LG3["flows/"]
+        LG4["core/"]
+        LG5{"Entscheidung"}
+        LG6["Ausnahme"]
+        LG7["Singleton<br/>ein Objekt, ganzer Prozess"]
+        LG8["Scoped Singleton<br/>ein Objekt je Anfrage"]
+    end
+
+    %% ---------- Farben ----------
+    classDef startknoten fill:#1a202c,stroke:#1a202c,stroke-width:3px,color:#1a202c
+    classDef endknoten fill:#1a202c,stroke:#ffffff,stroke-width:3px,color:#1a202c
+    classDef router fill:#bee3f8,stroke:#2b6cb0,stroke-width:2px,color:#1a202c
+    classDef workflow fill:#c6f6d5,stroke:#276749,stroke-width:2px,color:#1a202c
+    classDef flow fill:#feebc8,stroke:#c05621,stroke-width:2px,color:#1a202c
+    classDef core fill:#e9d8fd,stroke:#6b46c1,stroke-width:2px,color:#1a202c
+    classDef entscheidung fill:#fefcbf,stroke:#b7791f,stroke-width:2px,color:#1a202c
+    classDef fehler fill:#fed7d7,stroke:#c53030,stroke-width:2px,color:#1a202c
+    classDef datenbank fill:#e2e8f0,stroke:#4a5568,stroke-width:2px,color:#1a202c
+    classDef warten fill:#ffffff,stroke:#4a5568,stroke-width:2px,color:#1a202c
+    classDef singleton fill:#c6f6d5,stroke:#276749,stroke-width:4px,color:#1a202c
+    classDef scopedSingleton fill:#bee3f8,stroke:#2b6cb0,stroke-width:4px,stroke-dasharray:5 3,color:#1a202c
+
+    class START startknoten
+    class ENDE endknoten
+    class A1,A8 core
+    class A2 singleton
+    class L1,M5 scopedSingleton
+    class P4,P6 core
+    class A3,A4,A5,A6,A7 workflow
+    class L2,P2,M1 workflow
+    class L1,P1,M2,M3,M4 router
+    class L3,L4,L6,L7,P3,P5 flow
+    class Q1,Q2,Q3,Q4 entscheidung
+    class L5 fehler
+    class DB datenbank
+    class WARTEN warten
+
+    class LG1 router
+    class LG2 workflow
+    class LG3 flow
+    class LG4 core
+    class LG5 entscheidung
+    class LG6 fehler
+    class LG7 singleton
+    class LG8 scopedSingleton
