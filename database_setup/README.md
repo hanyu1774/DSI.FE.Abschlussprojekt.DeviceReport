@@ -1,3 +1,7 @@
+# [OBSOLET]
+Das gesamte Verzeichnis von `/database_setup` wird nicht mehr gebraucht, da die relevanten Integrationn (SQL, FAST API etc.) in `/streamlit_webapp` stattfinden.
+
+
 # Produktionshallen-Reporting – Mock-Daten + API (Flow Design, v2)
 
 Code-Bezeichner (Dateien, Klassen, Felder) sind durchgaengig Englisch.
