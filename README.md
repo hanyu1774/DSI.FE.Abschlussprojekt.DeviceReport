@@ -1,4 +1,6 @@
-# Dieses Abschlussprojekt lief im Rahmen einer Weiterbildung zu Data Science bei der Data Science Institut GmbH.
+# Abschlussprojekt
+
+Dieses Abschlussprojekt lief im Rahmen einer Weiterbildung zu Data Science bei der Data Science Institut GmbH.
 
 ## Streamlit WebApp
 Die Streamlit WebApp ist im Ordner `/streamlit_webapp`.
